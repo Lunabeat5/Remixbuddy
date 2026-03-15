@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TrackAnalysis",
+  "definitions": {
+    "Request": {
+      "type": "object",
+      "properties": {
+        "request_id": { "type": "string", "format": "uuid" },
+        "file_path": { "type": "string" },
+        "detect_sections": { "type": "boolean", "default": true },
+        "detect_key": { "type": "boolean", "default": true },
+        "detect_bpm": { "type": "boolean", "default": true },
+        "workspace_id": { "type": "string" }
+      },
+      "required": ["request_id", "file_path"]
+    },
+    "Response": {
+      "type": "object",
+      "properties": {
+        "job_id": { "type": "string" },
+        "status": { "type": "string", "enum": ["completed", "failed"] },
+        "bpm": { "type": "number", "description": "Precise measured BPM (float, e.g. 128.203)" },
+        "suggested_bpm": { "type": "number", "description": "Optional musical interpretation (e.g. rounded, half/double time)" },
+        "bpm_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "bpm_confidence_label": { "type": "string", "enum": ["low", "medium", "high"], "description": "Human-readable confidence level" },
+        "key": { "type": "string" },
+        "key_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "duration_sec": { "type": "number" },
+        "sample_rate_hz": { "type": "integer" },
+        "channels": { "type": "integer" },
+        "source_format": { "type": "string" },
+        "analysis_version": { "type": "string" },
+        "diagnostics": {
+          "type": "object",
+          "properties": {
+            "bpm_windows_total": { "type": "integer" },
+            "bpm_windows_valid": { "type": "integer" },
+            "bpm_candidates": { "type": "array", "items": { "type": "number" } }
+          }
+        },
+        "schema_version": { "type": "string", "default": "1.0.0" },
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string" },
+              "start_sec": { "type": "number" },
+              "end_sec": { "type": "number" },
+              "confidence": { "type": "number" }
+            }
+          }
+        }
+      },
+      "required": ["job_id", "status", "bpm", "key", "sample_rate_hz", "channels", "schema_version"]
+    }
+  }
+}

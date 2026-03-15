@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StemSeparation",
+  "definitions": {
+    "Request": {
+      "type": "object",
+      "properties": {
+        "request_id": { "type": "string", "format": "uuid" },
+        "file_path": { "type": "string" },
+        "model_id": { "type": "string", "enum": ["htdemucs", "htdemucs_ft", "mdx_extra"], "default": "htdemucs" },
+        "output_format": { "type": "string", "enum": ["wav24", "flac"], "default": "wav24" },
+        "target_bpm": { "type": "number" },
+        "key_shift": { "type": "integer", "default": 0 },
+        "normalize_output": { "type": "boolean", "default": true },
+        "overwrite_existing": { "type": "boolean", "default": false },
+        "workspace_id": { "type": "string" }
+      },
+      "required": ["request_id", "file_path"]
+    },
+    "Response": {
+      "type": "object",
+      "properties": {
+        "job_id": { "type": "string" },
+        "status": { "type": "string", "enum": ["completed", "failed"] },
+        "model_id": { "type": "string" },
+        "processing_time_ms": { "type": "integer" },
+        "schema_version": { "type": "string", "default": "1.0.0" },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "stems": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "enum": ["vocals", "drums", "bass", "other"] },
+              "file_path": { "type": "string" },
+              "format": { "type": "string" },
+              "peak_dbfs": { "type": "number" }
+            },
+            "required": ["name", "file_path", "format"]
+          }
+        }
+      },
+      "required": ["job_id", "status", "stems", "model_id", "schema_version"]
+    }
+  }
+}
