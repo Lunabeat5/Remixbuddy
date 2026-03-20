@@ -34,17 +34,30 @@ public:
         bool valid = false;
     };
 
+    struct StemAssets {
+        bool ready = false;
+        juce::String statusMessage;
+        juce::String outputDirectory;
+        juce::StringArray stems;
+    };
+
     ServiceConnector();
     ~ServiceConnector() = default;
 
     /** Submits a file for analysis. Returns the jobId. */
     juce::String submitAnalysis(const juce::File& file);
 
+    /** Submits a file for stem separation via Demucs. */
+    juce::String submitStemJob(const juce::File& file);
+
     /** Polls the status of a job. */
     JobStatus getJobStatus(const juce::String& jobId);
 
     /** Gets the final result. */
     AnalysisResult getAnalysisResult(const juce::String& jobId);
+
+    /** Retrieves stem assets once separation completes. */
+    StemAssets getStemAssets(const juce::String& jobId);
 
     /** Checks if the service is healthy. Updates internal status. */
     ServiceStatus checkHealth();

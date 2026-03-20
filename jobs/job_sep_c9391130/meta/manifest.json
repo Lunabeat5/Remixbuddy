@@ -1,0 +1,32 @@
+{
+  "job_id": "job_sep_c9391130",
+  "model_id": "htdemucs",
+  "stems": [
+    {
+      "name": "vocals",
+      "file_path": "D:\\ASDZ-Projekte-2026\\RemixBuddy\\jobs\\job_sep_c9391130\\stems\\vocals.wav",
+      "format": "wav24",
+      "peak_dbfs": null
+    },
+    {
+      "name": "drums",
+      "file_path": "D:\\ASDZ-Projekte-2026\\RemixBuddy\\jobs\\job_sep_c9391130\\stems\\drums.wav",
+      "format": "wav24",
+      "peak_dbfs": null
+    },
+    {
+      "name": "bass",
+      "file_path": "D:\\ASDZ-Projekte-2026\\RemixBuddy\\jobs\\job_sep_c9391130\\stems\\bass.wav",
+      "format": "wav24",
+      "peak_dbfs": null
+    },
+    {
+      "name": "other",
+      "file_path": "D:\\ASDZ-Projekte-2026\\RemixBuddy\\jobs\\job_sep_c9391130\\stems\\other.wav",
+      "format": "wav24",
+      "peak_dbfs": null
+    }
+  ],
+  "normalized_input": "D:\\ASDZ-Projekte-2026\\RemixBuddy\\jobs\\job_sep_c9391130\\input\\input.wav",
+  "timestamp": "2026-03-19T21:24:33.371398Z"
+}

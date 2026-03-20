@@ -24,12 +24,28 @@ RemixBuddyAudioProcessorEditor::RemixBuddyAudioProcessorEditor (RemixBuddyAudioP
     resultLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (resultLabel);
 
+    separateStemsButton.onClick = [this] { startStemSeparation(); };
+    addAndMakeVisible (separateStemsButton);
+
+    stemStatusLabel.setJustificationType (juce::Justification::left);
+    addAndMakeVisible (stemStatusLabel);
+    stemOutputLabel.setJustificationType (juce::Justification::left);
+    addAndMakeVisible (stemOutputLabel);
+    stemListLabel.setJustificationType (juce::Justification::left);
+    stemListLabel.setMinimumHorizontalScale (0.5f);
+    addAndMakeVisible (stemListLabel);
+    stemErrorLabel.setJustificationType (juce::Justification::left);
+    stemErrorLabel.setColour (juce::Label::textColourId, juce::Colours::red);
+    addAndMakeVisible (stemErrorLabel);
+
     debugLabel.setFont (juce::Font (12.0f));
     debugLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
     addAndMakeVisible (debugLabel);
 
     setUIState (UIState::CheckingService);
     startTimer (1000); // UI & Health timer
+
+    updateStemButtonState();
 }
 
 RemixBuddyAudioProcessorEditor::~RemixBuddyAudioProcessorEditor() {
@@ -52,6 +68,15 @@ void RemixBuddyAudioProcessorEditor::resized() {
     progressBar.setBounds (area.removeFromTop (15));
     area.removeFromTop (10);
     resultLabel.setBounds (area.removeFromTop (60));
+    area.removeFromTop (10);
+    separateStemsButton.setBounds (area.removeFromTop (35).withSizeKeepingCentre (180, 36));
+    area.removeFromTop (6);
+    stemStatusLabel.setBounds (area.removeFromTop (20));
+    stemOutputLabel.setBounds (area.removeFromTop (20));
+    auto stemListArea = area.removeFromTop (70);
+    stemListLabel.setBounds (stemListArea);
+    area.removeFromTop (4);
+    stemErrorLabel.setBounds (area.removeFromTop (20));
     debugLabel.setBounds (area);
 }
 
@@ -92,6 +117,7 @@ void RemixBuddyAudioProcessorEditor::setUIState (UIState newState) {
             analyzeButton.setEnabled (true);
             break;
     }
+    updateStemButtonState();
     updateDebugInfo();
 }
 
@@ -113,6 +139,31 @@ void RemixBuddyAudioProcessorEditor::filesDropped (const juce::StringArray& file
     if (currentState == UIState::ServiceAvailable || currentState == UIState::Idle) {
         setUIState (UIState::Idle);
     }
+    updateStemButtonState();
+}
+
+void RemixBuddyAudioProcessorEditor::updateStemButtonState() {
+    bool serviceReady = currentState == UIState::ServiceAvailable || currentState == UIState::Idle || currentState == UIState::Completed;
+    separateStemsButton.setEnabled (serviceReady && selectedFile.exists() && !stemJobActive);
+}
+
+void RemixBuddyAudioProcessorEditor::startStemSeparation() {
+    if (!selectedFile.exists())
+        return;
+
+    stemStatusLabel.setText ("Stem Status: Submitting...", juce::dontSendNotification);
+    stemErrorLabel.setText ("", juce::dontSendNotification);
+
+    currentStemJobId = audioProcessor.getServiceConnector().submitStemJob (selectedFile);
+    if (currentStemJobId.isNotEmpty()) {
+        stemJobActive = true;
+        stemStatusLabel.setText ("Stem Status: Queued", juce::dontSendNotification);
+        separateStemsButton.setEnabled (false);
+    } else {
+        stemErrorLabel.setText ("Stem job submission failed.", juce::dontSendNotification);
+    }
+
+    updateStemButtonState();
 }
 
 void RemixBuddyAudioProcessorEditor::startAnalysis() {
@@ -160,6 +211,41 @@ void RemixBuddyAudioProcessorEditor::timerCallback() {
             }
         } else if (job.status == "failed" || !job.valid) {
             setUIState (UIState::Failed);
+        }
+    }
+    if (stemJobActive && currentStemJobId.isNotEmpty()) {
+        auto stemJob = audioProcessor.getServiceConnector().getJobStatus (currentStemJobId);
+        juce::String stemStatusText = "Stem Status: " + stemJob.status;
+        if (stemJob.message.isNotEmpty()) {
+            stemStatusText += " - " + stemJob.message;
+        }
+        stemStatusLabel.setText (stemStatusText, juce::dontSendNotification);
+
+        if (stemJob.status == "completed") {
+            auto assets = audioProcessor.getServiceConnector().getStemAssets (currentStemJobId);
+            if (assets.ready) {
+                juce::String outputDir = assets.outputDirectory;
+                if (outputDir.isEmpty()) {
+                    outputDir = "jobs/" + currentStemJobId + "/stems";
+                }
+                stemOutputLabel.setText ("Output: " + outputDir, juce::dontSendNotification);
+                juce::String stemsText = assets.stems.joinIntoString ("\n");
+                if (stemsText.isEmpty()) {
+                    stemListLabel.setText ("Stems: (none)", juce::dontSendNotification);
+                } else {
+                    stemListLabel.setText ("Stems:\n" + stemsText, juce::dontSendNotification);
+                }
+            }
+            stemErrorLabel.setText ("", juce::dontSendNotification);
+            stemJobActive = false;
+            currentStemJobId.clear();
+            updateStemButtonState();
+        } else if (stemJob.status == "failed" || !stemJob.valid) {
+            juce::String failureMessage = stemJob.message.isNotEmpty() ? stemJob.message : "unknown failure";
+            stemErrorLabel.setText ("Stem job failed: " + failureMessage, juce::dontSendNotification);
+            stemJobActive = false;
+            currentStemJobId.clear();
+            updateStemButtonState();
         }
     }
     

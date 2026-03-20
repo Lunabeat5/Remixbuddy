@@ -2,15 +2,24 @@ import time
 import logging
 import os
 import traceback
+import subprocess
+import shutil
+import json
 import librosa
 import numpy as np
+import soundfile as sf
 from typing import Dict
+from datetime import datetime
 from service.models import (
     JobStatus, 
     JobStatusEnum, 
     TrackAnalysisResponse, 
     Section,
-    TrackAnalysisRequest
+    TrackAnalysisRequest,
+    StemSeparationRequest,
+    StemSeparationResponse,
+    StemAsset,
+    StemNameEnum
 )
 
 # Configure logging
@@ -195,3 +204,113 @@ def analyze_track_task(job_id: str, request: TrackAnalysisRequest, jobs_db: Dict
         logger.error(traceback.format_exc())
         jobs_db[job_id].status = JobStatusEnum.FAILED
         jobs_db[job_id].message = str(e)
+
+
+def run_stem_separation_task(job_id: str, request: StemSeparationRequest, jobs_db: Dict[str, JobStatus], results_db: Dict[str, StemSeparationResponse]):
+    """
+    Background task that runs Demucs locally and captures the generated stems.
+    """
+    start_time = time.time()
+    job = jobs_db[job_id]
+    try:
+        job.status = JobStatusEnum.PROCESSING
+        job.progress = 0.1
+        job.message = "Preparing stem separation..."
+
+        if not os.path.exists(request.file_path):
+            raise FileNotFoundError(f"Audio file not found: {request.file_path}")
+
+        job_root = os.path.join("jobs", job_id)
+        input_dir = os.path.join(job_root, "input")
+        stems_dir = os.path.join(job_root, "stems")
+        meta_dir = os.path.join(job_root, "meta")
+        os.makedirs(input_dir, exist_ok=True)
+        os.makedirs(stems_dir, exist_ok=True)
+        os.makedirs(meta_dir, exist_ok=True)
+
+        normalized_path = os.path.join(input_dir, "input.wav")
+        job.progress = 0.25
+        job.message = "Normalizing audio to WAV..."
+        if request.file_path.lower().endswith(".wav"):
+            shutil.copy2(request.file_path, normalized_path)
+        else:
+            y, sr = librosa.load(request.file_path, sr=None, mono=False)
+            waveform = np.asarray(y)
+            if waveform.ndim > 1:
+                waveform = waveform.T
+            sf.write(normalized_path, waveform, sr, subtype="PCM_16")
+
+        job.progress = 0.4
+        job.message = "Checking FFmpeg availability..."
+        subprocess.run(["ffmpeg", "-version"], check=True, capture_output=True)
+
+        job.progress = 0.5
+        job.message = "Running Demucs..."
+        demucs_output = os.path.join(job_root, "demucs")
+        input_basename = os.path.splitext(os.path.basename(normalized_path))[0]
+        demucs_cmd = ["demucs", "-n", request.model_id, "-o", demucs_output, normalized_path]
+        proc = subprocess.run(demucs_cmd, capture_output=True, text=True)
+        run_log = {
+            "command": demucs_cmd,
+            "returncode": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+        with open(os.path.join(meta_dir, "run_log.json"), "w", encoding="utf-8") as log_file:
+            json.dump(run_log, log_file, indent=2)
+
+        if proc.returncode != 0:
+            raise RuntimeError(f"Demucs failed: {proc.stderr.strip() or 'Unknown error'}")
+
+        source_stems_dir = os.path.join(demucs_output, request.model_id, input_basename)
+        job.progress = 0.7
+        job.message = "Collecting stems..."
+
+        stem_assets = []
+        for stem in StemNameEnum:
+            source_file = os.path.join(source_stems_dir, f"{stem.value}.wav")
+            if not os.path.exists(source_file):
+                raise FileNotFoundError(f"Missing stem file: {source_file}")
+            destination_file = os.path.join(stems_dir, f"{stem.value}.wav")
+            shutil.copy2(source_file, destination_file)
+            stem_assets.append(
+                StemAsset(
+                    name=stem,
+                    file_path=os.path.abspath(destination_file),
+                    format=request.output_format
+                )
+            )
+
+        manifest = {
+            "job_id": job_id,
+            "model_id": request.model_id,
+            "stems": [asset.dict() for asset in stem_assets],
+            "normalized_input": os.path.abspath(normalized_path),
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+        with open(os.path.join(meta_dir, "manifest.json"), "w", encoding="utf-8") as manifest_file:
+            json.dump(manifest, manifest_file, indent=2)
+
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        response = StemSeparationResponse(
+            job_id=job_id,
+            status="completed",
+            model_id=request.model_id,
+            processing_time_ms=processing_time_ms,
+            warnings=[],
+            stems=stem_assets
+        )
+
+        results_db[job_id] = response
+        job.status = JobStatusEnum.COMPLETED
+        job.progress = 1.0
+        job.message = "Stem separation complete."
+        logger.info(f"Stem job {job_id} completed successfully.")
+
+    except Exception as exc:
+        logger.error(f"Stem job {job_id} failed: {str(exc)}")
+        logger.error(traceback.format_exc())
+        job.status = JobStatusEnum.FAILED
+        job.progress = 1.0
+        job.message = str(exc)

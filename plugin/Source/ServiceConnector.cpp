@@ -94,6 +94,21 @@ juce::String ServiceConnector::submitAnalysis(const juce::File& file) {
     return "";
 }
 
+juce::String ServiceConnector::submitStemJob(const juce::File& file) {
+    juce::DynamicObject::Ptr body = new juce::DynamicObject();
+    body->setProperty("request_id", juce::Uuid().toString());
+    body->setProperty("file_path", file.getFullPathName());
+    body->setProperty("model_id", "htdemucs");
+    body->setProperty("output_format", "wav24");
+    body->setProperty("normalize_output", true);
+
+    auto response = performRequest("/jobs/separate", "POST", juce::JSON::toString(juce::var(body)));
+    if (response.isObject() && response.hasProperty("job_id")) {
+        return response.getProperty("job_id", "").toString();
+    }
+    return "";
+}
+
 ServiceConnector::JobStatus ServiceConnector::getJobStatus(const juce::String& jobId) {
     auto response = performRequest("/jobs/" + jobId, "GET");
     JobStatus status;
@@ -119,6 +134,42 @@ ServiceConnector::AnalysisResult ServiceConnector::getAnalysisResult(const juce:
         result.success = true;
     }
     return result;
+}
+
+ServiceConnector::StemAssets ServiceConnector::getStemAssets(const juce::String& jobId) {
+    StemAssets info;
+    auto response = performRequest("/jobs/" + jobId + "/stems", "GET");
+
+    if (!response.isObject()) {
+        info.statusMessage = response.toString();
+        return info;
+    }
+
+    if (lastResponse.statusCode != 200) {
+        info.statusMessage = response.getProperty("detail", "pending").toString();
+        info.stems.clear();
+        return info;
+    }
+
+    info.ready = true;
+    info.statusMessage = response.getProperty("status", "completed").toString();
+    auto stemsVar = response.getProperty("stems", juce::var());
+    if (stemsVar.isArray()) {
+        auto* arr = stemsVar.getArray();
+        for (int i = 0; i < arr->size(); ++i) {
+            const auto& entry = arr->getReference(i);
+            juce::String name = entry.getProperty("name", "").toString();
+            juce::String path = entry.getProperty("file_path", "").toString();
+            if (name.isNotEmpty() && path.isNotEmpty()) {
+                info.stems.add(name + ": " + path);
+                if (info.outputDirectory.isEmpty()) {
+                    info.outputDirectory = juce::File(path).getParentDirectory().getFullPathName();
+                }
+            }
+        }
+    }
+
+    return info;
 }
 
 } // namespace RemixBuddy
